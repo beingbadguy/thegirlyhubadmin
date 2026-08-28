@@ -2,7 +2,7 @@
 
 import { ImagePlus, X } from "lucide-react";
 import Image from "next/image";
-import { ChangeEvent, DragEvent, FormEvent, useState, useEffect } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useState, useEffect, useRef } from "react";
 import { z } from "zod";
 import { api, getApiError } from "./api-client";
 import { SpinnerButton, Toast } from "./ui";
@@ -38,11 +38,13 @@ export function ProductEditor({
   onDone: () => void;
 }) {
   const [fetchedCategories, setFetchedCategories] = useState<string[]>(categories);
-  const [files, setFiles] = useState<File[]>([]);
+  const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>(product?.images || []);
   const [error, setError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  const createdUrls = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -66,16 +68,28 @@ export function ProductEditor({
     };
   }, [categories]);
 
+  useEffect(() => {
+    return () => {
+      // Clean up all object URLs created by this component on unmount
+      createdUrls.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
+
   const addFiles = (list: FileList | null) => {
     if (!list) return;
     const selected = Array.from(list).filter((file) =>
       file.type.startsWith("image/"),
     );
-    setFiles((current) => [...current, ...selected]);
-    setPreviews((current) => [
-      ...current,
-      ...selected.map((file) => URL.createObjectURL(file)),
-    ]);
+    const newPreviews = selected.map((file) => {
+      const url = URL.createObjectURL(file);
+      createdUrls.current.add(url);
+      (file as any).previewUrl = url;
+      return url;
+    });
+    setImages((current) => [...current, ...selected]);
+    setPreviews((current) => [...current, ...newPreviews]);
   };
 
   const drop = (event: DragEvent<HTMLLabelElement>) => {
@@ -84,8 +98,13 @@ export function ProductEditor({
   };
 
   const removePreview = (index: number) => {
-    setFiles((current) =>
-      current.filter((_, itemIndex) => itemIndex !== index),
+    const urlToRemove = previews[index];
+    if (urlToRemove.startsWith("blob:")) {
+      URL.revokeObjectURL(urlToRemove);
+      createdUrls.current.delete(urlToRemove);
+    }
+    setImages((current) =>
+      current.filter((file) => (file as any).previewUrl !== urlToRemove),
     );
     setPreviews((current) =>
       current.filter((_, itemIndex) => itemIndex !== index),
@@ -113,22 +132,43 @@ export function ProductEditor({
       return;
     }
 
-    if (previews.length === 0 && files.length === 0) {
+    if (previews.length === 0 && images.length === 0) {
       setErrors({ image: "At least one product image is required" });
       return;
     }
 
     setBusy(true);
     try {
-      const form = new FormData(event.currentTarget);
-      
-      // The API expects a single file in the 'image' field
-      if (files.length > 0) {
-        form.append("image", files[0]);
+      // Build a clean FormData from scratch so we control exactly what is sent
+      const form = new FormData();
+
+      // Append all text/number fields from the HTML form
+      for (const [key, value] of new FormData(event.currentTarget).entries()) {
+        // Skip any stale file inputs — we manage files manually below
+        if (value instanceof File) continue;
+        form.append(key, value);
       }
 
-      if (product) await api.put(`/api/product/${product.id}`, form);
-      else await api.post("/api/product", form);
+      // Append new image files selected by the admin
+      images.forEach((file) => {
+        form.append("images", file);
+      });
+
+      if (product) {
+        // For edits: also forward existing Cloudinary URLs that the admin kept
+        // (any preview that is NOT a local blob is an already-uploaded URL)
+        const existingImageUrls = previews.filter(
+          (url) => !url.startsWith("blob:"),
+        );
+        existingImageUrls.forEach((url) => {
+          form.append("existingImages", url);
+        });
+
+        await api.put(`/api/product/${product.id}`, form);
+      } else {
+        await api.post("/api/product", form);
+      }
+
       onDone();
     } catch (requestError) {
       setError(getApiError(requestError, "Unable to save product."));
