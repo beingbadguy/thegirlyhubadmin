@@ -1,132 +1,173 @@
 "use client";
-import { FormEvent, useState } from "react";
-import { Plus, Tag } from "lucide-react";
-import { AdminShell, Empty, PageTitle, Status } from "../admin-shared";
+import { Copy, Mail, Search, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { AdminShell, Empty, PageTitle } from "../admin-shared";
+import { formatDate } from "../admin-data";
 import { api, getApiError } from "../api-client";
 import { useApiResource } from "../use-api-resource";
-import { formatDate } from "../admin-data";
 import { Pagination, usePagination } from "../pagination";
 
-type ApiCoupon = {
+type ApiNewsletter = {
   _id: string;
-  name: string;
-  code: string;
-  discount: number | string;
-  isActive: boolean;
+  email: string;
   createdAt: string;
 };
 
-type CouponResponse = { coupons: ApiCoupon[] };
+type NewsletterResponse = { newsletters: ApiNewsletter[] };
 
-export default function OthersPage() {
-  const resource = useApiResource<CouponResponse>("/api/coupon", {
-    coupons: [],
+export default function NewsletterPage() {
+  const [searchSub, setSearchSub] = useState("");
+  
+  const resource = useApiResource<NewsletterResponse>("/api/newsletter", {
+    newsletters: [],
   });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [discount, setDiscount] = useState("");
-  const coupons = resource.data.coupons || [];
-  const { page, pageCount, setPage, visibleItems } = usePagination(coupons);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!name.trim() || !code.trim() || !discount || Number(discount) <= 0) {
-      setError("Enter a name, code, and discount greater than zero.");
-      return;
-    }
-    setBusy(true);
-    setError("");
+
+  const rawSubscribers = Array.isArray(resource.data)
+    ? resource.data
+    : resource.data?.newsletters || [];
+
+  const subscribersList = rawSubscribers.map((item) => ({
+    id: item._id,
+    email: item.email || "N/A",
+    date: item.createdAt || "",
+  }));
+
+  const filteredSubscribers = subscribersList.filter((s) =>
+    s.email.toLowerCase().includes(searchSub.toLowerCase().trim()),
+  );
+
+  const subscribersPagination = usePagination(filteredSubscribers, 10);
+
+  const deleteSubscriber = async (id: string) => {
+    if (!window.confirm("Remove this email from the newsletter list?")) return;
     try {
-      await api.post("/api/coupon", {
-        name: name.trim(),
-        code: code.trim().toUpperCase(),
-        discount: Number(discount),
-      });
+      await api.delete(`/api/newsletter/${id}`);
       await resource.refresh();
-      setName("");
-      setCode("");
-      setDiscount("");
-    } catch (requestError) {
-      setError(getApiError(requestError, "Coupon creation failed."));
-    } finally {
-      setBusy(false);
+    } catch (err) {
+      alert(getApiError(err, "Failed to remove subscriber."));
     }
   };
+
+  const copyAllEmails = () => {
+    const emails = subscribersList.map((s) => s.email).join(", ");
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(emails);
+      alert("All subscriber emails copied to clipboard!");
+    }
+  };
+
   return (
     <AdminShell active="/others">
       <PageTitle
-        title="Coupons"
-        description="Create and manage discounts for your store."
+        title="Newsletter"
+        description="Manage your newsletter subscriptions."
       />
-      <div className="others-grid">
-        <div className="panel coupon-form">
-          <div className="panel-head">
-            <h2>Create a coupon</h2>
-            <Tag size={18} />
+      
+      <div className="panel table-panel flex flex-col justify-between" style={{ minHeight: "520px" }}>
+        <div>
+          <div className="panel-head flex items-center justify-between" style={{ padding: "20px 20px 10px" }}>
+            <div>
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                Subscribers list
+                <span className="text-xs font-bold bg-[#f1f1ed] text-[#777] px-2 py-0.5 rounded-full">
+                  {filteredSubscribers.length}
+                </span>
+              </h2>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="button soft compact"
+                onClick={copyAllEmails}
+                disabled={subscribersList.length === 0}
+                title="Copy all email addresses"
+              >
+                Copy All
+              </button>
+              <Mail size={18} className="text-[#db4d79] self-center ml-1" />
+            </div>
           </div>
-          <form onSubmit={submit}>
-            <label>
-              Coupon name
+
+          {/* Search Bar */}
+          <div className="px-4 pb-3 border-b border-[#efefec]">
+            <div className="relative flex items-center border border-[#e9e8e5] rounded-lg px-3 bg-white w-full">
+              <Search size={15} className="text-[#999] mr-2" />
               <input
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
+                type="text"
+                placeholder="Search subscribers..."
+                className="text-xs py-2 w-full outline-none bg-transparent"
+                value={searchSub}
+                onChange={(e) => {
+                  setSearchSub(e.target.value);
+                  subscribersPagination.setPage(1);
+                }}
               />
-            </label>
-            <label>
-              Coupon code
-              <input
-                required
-                value={code}
-                onChange={(event) => setCode(event.target.value.toUpperCase())}
-              />
-            </label>
-            <label>
-              Discount amount (%)
-              <input
-                required
-                type="number"
-                value={discount}
-                onChange={(event) => setDiscount(event.target.value)}
-              />
-            </label>
-            {error && <p className="login-error">{error}</p>}
-            <button className="button" disabled={busy}>
-              <Plus size={16} /> Create coupon
-            </button>
-          </form>
-        </div>
-        <div className="panel coupon-list">
-          <h2>Existing coupons</h2>
+            </div>
+          </div>
+
           {resource.error ? (
             <Empty text={resource.error} />
           ) : resource.loading ? (
-            <Empty text="Loading coupons..." />
-          ) : !coupons.length ? (
-            <Empty text="No coupons found" />
+            <Empty text="Loading newsletter subscribers..." />
+          ) : filteredSubscribers.length === 0 ? (
+            <Empty text="No subscribers found" />
           ) : (
-            visibleItems.map((coupon) => (
-              <div className="coupon-row" key={coupon._id}>
-                <Tag size={17} />
-                <span>
-                  <b>{coupon.name}</b>
-                  <small>
-                    {coupon.code} · {formatDate(coupon.createdAt)}
-                  </small>
-                </span>
-                <strong>{coupon.discount}%</strong>
-                <Status value={coupon.isActive ? "active" : "cancelled"} />
-              </div>
-            ))
+            <table style={{ width: "100%" }}>
+              <thead>
+                <tr style={{ background: "#fcfcfa", borderBottom: "1px solid #e9e8e5" }}>
+                  <th style={{ padding: "10px 14px", fontSize: "11px" }}>Email</th>
+                  <th style={{ padding: "10px 14px", fontSize: "11px" }}>Date Joined</th>
+                  <th style={{ padding: "10px 14px", fontSize: "11px", textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subscribersPagination.visibleItems.map((item) => (
+                  <tr key={item.id}>
+                    <td style={{ padding: "10px 14px", verticalAlign: "middle" }}>
+                      <div className="flex items-center gap-2">
+                        <Mail size={14} className="text-[#777] flex-shrink-0" />
+                        <b className="truncate text-xs block max-w-[130px] sm:max-w-xs" title={item.email}>
+                          {item.email}
+                        </b>
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 14px", verticalAlign: "middle" }} className="text-xs text-[#777] tabular-nums">
+                      {formatDate(item.date)}
+                    </td>
+                    <td style={{ padding: "10px 14px", verticalAlign: "middle", textAlign: "right" }}>
+                      <div className="row-actions justify-end">
+                        <button
+                          className="icon-button"
+                          onClick={() => {
+                            if (typeof navigator !== "undefined" && navigator.clipboard) {
+                              navigator.clipboard.writeText(item.email);
+                              alert("Email copied to clipboard!");
+                            }
+                          }}
+                          title="Copy email"
+                        >
+                          <Copy size={13} />
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          onClick={() => void deleteSubscriber(item.id)}
+                          title="Delete subscriber"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
-          {!resource.loading && !resource.error && coupons.length > 0 && (
-            <Pagination
-              page={page}
-              pageCount={pageCount}
-              onPageChange={setPage}
-            />
-          )}
+        </div>
+        <div style={{ marginTop: "auto", paddingTop: "10px" }}>
+          <Pagination
+            page={subscribersPagination.page}
+            pageCount={subscribersPagination.pageCount}
+            onPageChange={subscribersPagination.setPage}
+          />
         </div>
       </div>
     </AdminShell>

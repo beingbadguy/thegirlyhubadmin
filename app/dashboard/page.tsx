@@ -1,11 +1,12 @@
 "use client";
 import { ShoppingBag, Users, Box, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { AdminShell, PageTitle } from "../admin-shared";
-import { formatCurrency, type Order, type Product } from "../admin-data";
+import { formatCurrency, normalizeOrder, type Order, type Product } from "../admin-data";
 import { useApiResource } from "../use-api-resource";
 
 export default function DashboardPage() {
-  const ordersResource = useApiResource<Order[] | { orders: Order[] }>(
+  const ordersResource = useApiResource<any[] | { orders: any[] }>(
     "/api/orders",
     [],
   );
@@ -13,26 +14,38 @@ export default function DashboardPage() {
     "/api/product",
     [],
   );
-  const orders = Array.isArray(ordersResource.data)
+  const usersResource = useApiResource<any[] | { users: any[] }>(
+    "/api/users",
+    [],
+  );
+
+  const rawOrders = Array.isArray(ordersResource.data)
     ? ordersResource.data
     : ordersResource.data.orders || [];
+  const orders = rawOrders.map(normalizeOrder);
   const products = Array.isArray(productsResource.data)
     ? productsResource.data
     : productsResource.data.products || [];
+  const rawUsers = Array.isArray(usersResource.data)
+    ? usersResource.data
+    : usersResource.data.users || [];
+
   const revenue = orders.reduce((total, order) => total + order.total, 0);
+
   const metrics = [
     ["Net revenue", formatCurrency(revenue), TrendingUp],
-    ["Total orders", "1,284", ShoppingBag],
-    ["Total customers", "4,892", Users],
-    ["Total products", String(products.length + 128), Box],
+    ["Total orders", String(orders.length), ShoppingBag],
+    ["Total customers", String(rawUsers.length), Users],
+    ["Total products", String(products.length), Box],
   ] as const;
+
   return (
     <AdminShell active="/dashboard">
       <PageTitle
         title="Good morning, Amelia"
         description="Here is what is happening with your store today."
       />
-      {(ordersResource.error || productsResource.error) && (
+      {(ordersResource.error || productsResource.error || usersResource.error) && (
         <p className="login-error">Unable to load live dashboard data.</p>
       )}
       <section className="metric-grid">
@@ -82,18 +95,27 @@ export default function DashboardPage() {
               <p>Latest customer activity</p>
             </div>
           </div>
-          {orders.map((order) => (
-            <div className="order-row" key={order.id}>
-              <div className="order-icon">
-                <ShoppingBag size={17} />
+          <div className="flex flex-col gap-1">
+            {orders.slice(0, 5).map((order) => (
+              <div className="order-row" key={order.id}>
+                <div className="order-icon">
+                  <ShoppingBag size={17} />
+                </div>
+                <div className="order-main">
+                  <b>{order.id}</b>
+                  <span>{order.customer}</span>
+                </div>
+                <strong>{formatCurrency(order.total)}</strong>
               </div>
-              <div className="order-main">
-                <b>{order.id}</b>
-                <span>{order.customer}</span>
-              </div>
-              <strong>{formatCurrency(order.total)}</strong>
+            ))}
+          </div>
+          {orders.length > 5 && (
+            <div className="text-center pt-3 border-t border-[#efefec] mt-3">
+              <Link href="/orders" className="text-xs font-semibold text-[#db4d79] hover:underline inline-flex items-center gap-1">
+                View all orders <span className="text-sm">→</span>
+              </Link>
             </div>
-          ))}
+          )}
         </div>
       </section>
     </AdminShell>

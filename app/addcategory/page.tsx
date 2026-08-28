@@ -95,6 +95,7 @@ export default function AddCategoryPage() {
                 name="image"
                 type="file"
                 accept="image/*"
+                className="sr-only"
                 onChange={chooseImage}
               />
             </label>

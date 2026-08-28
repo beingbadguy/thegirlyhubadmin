@@ -2,7 +2,7 @@
 
 import { ImagePlus, X } from "lucide-react";
 import Image from "next/image";
-import { ChangeEvent, DragEvent, FormEvent, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useState, useEffect } from "react";
 import { z } from "zod";
 import { api, getApiError } from "./api-client";
 import { SpinnerButton, Toast } from "./ui";
@@ -15,13 +15,16 @@ const productSchema = z
       .string()
       .trim()
       .min(10, "Description must be at least 10 characters"),
-    originalPrice: z.coerce.number().positive("Enter the original price"),
-    price: z.coerce.number().nonnegative("Enter the discounted price"),
-    stock: z.coerce.number().int().nonnegative("Stock cannot be negative"),
+    price: z.coerce.number().positive("Enter the original price"),
+    discountedPrice: z.coerce.number().nonnegative("Enter the discounted price"),
+    countInStock: z.coerce.number().int().nonnegative("Stock cannot be negative"),
     category: z.string().min(1, "Choose a category"),
+    info: z.string().trim().min(10, "Long information must be at least 10 characters"),
+    weight: z.coerce.number().positive("Weight must be positive").optional().or(z.literal("")),
+    brand: z.string().trim().optional(),
   })
-  .refine((data) => data.price <= data.originalPrice, {
-    path: ["price"],
+  .refine((data) => data.discountedPrice <= data.price, {
+    path: ["discountedPrice"],
     message: "Discounted price cannot exceed original price",
   });
 
@@ -34,10 +37,35 @@ export function ProductEditor({
   categories?: string[];
   onDone: () => void;
 }) {
+  const [fetchedCategories, setFetchedCategories] = useState<string[]>(categories);
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>(product?.images || []);
   const [error, setError] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    api.get<any>("/api/category")
+      .then((res) => {
+        if (!mounted) return;
+        const cats = Array.isArray(res.data)
+          ? res.data
+          : res.data?.categories || [];
+        const activeCatNames = cats
+          .filter((c: any) => c.isActive !== false && c.isDeleted !== true)
+          .map((c: any) => c.name);
+        const merged = Array.from(new Set([...categories, ...activeCatNames]));
+        setFetchedCategories(merged);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch categories:", err);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [categories]);
+
   const addFiles = (list: FileList | null) => {
     if (!list) return;
     const selected = Array.from(list).filter((file) =>
@@ -49,10 +77,12 @@ export function ProductEditor({
       ...selected.map((file) => URL.createObjectURL(file)),
     ]);
   };
+
   const drop = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     addFiles(event.dataTransfer.files);
   };
+
   const removePreview = (index: number) => {
     setFiles((current) =>
       current.filter((_, itemIndex) => itemIndex !== index),
@@ -61,21 +91,42 @@ export function ProductEditor({
       current.filter((_, itemIndex) => itemIndex !== index),
     );
   };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
-    const values = Object.fromEntries(
-      new FormData(event.currentTarget).entries(),
-    );
+    setErrors({});
+
+    const formData = new FormData(event.currentTarget);
+    const values = Object.fromEntries(formData.entries());
+
     const parsed = productSchema.safeParse(values);
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message || "Check the form fields");
+      const fieldErrors: Record<string, string> = {};
+      parsed.error.issues.forEach((issue) => {
+        const path = issue.path[0];
+        if (typeof path === "string") {
+          fieldErrors[path] = issue.message;
+        }
+      });
+      setErrors(fieldErrors);
       return;
     }
+
+    if (previews.length === 0 && files.length === 0) {
+      setErrors({ image: "At least one product image is required" });
+      return;
+    }
+
     setBusy(true);
     try {
       const form = new FormData(event.currentTarget);
-      files.forEach((file) => form.append("productImage", file));
+      
+      // The API expects a single file in the 'image' field
+      if (files.length > 0) {
+        form.append("image", files[0]);
+      }
+
       if (product) await api.put(`/api/product/${product.id}`, form);
       else await api.post("/api/product", form);
       onDone();
@@ -85,15 +136,22 @@ export function ProductEditor({
       setBusy(false);
     }
   };
+
   return (
     <form className="product-editor" onSubmit={submit}>
       <div className="editor-main">
         <label>
-          Product name
+          <div className="label-header">
+            <span>Product name</span>
+            {errors.title && <span className="field-error">{errors.title}</span>}
+          </div>
           <input name="title" defaultValue={product?.title} />
         </label>
         <label>
-          Description
+          <div className="label-header">
+            <span>Description</span>
+            {errors.description && <span className="field-error">{errors.description}</span>}
+          </div>
           <textarea
             name="description"
             rows={5}
@@ -102,9 +160,12 @@ export function ProductEditor({
         </label>
         <div className="editor-grid">
           <label>
-            Original price
+            <div className="label-header">
+              <span>Original price</span>
+              {errors.price && <span className="field-error">{errors.price}</span>}
+            </div>
             <input
-              name="originalPrice"
+              name="price"
               type="number"
               min="0"
               step="0.01"
@@ -112,9 +173,12 @@ export function ProductEditor({
             />
           </label>
           <label>
-            Discounted price
+            <div className="label-header">
+              <span>Discounted price</span>
+              {errors.discountedPrice && <span className="field-error">{errors.discountedPrice}</span>}
+            </div>
             <input
-              name="price"
+              name="discountedPrice"
               type="number"
               min="0"
               step="0.01"
@@ -122,30 +186,71 @@ export function ProductEditor({
             />
           </label>
           <label>
-            Stock
+            <div className="label-header">
+              <span>Stock</span>
+              {errors.countInStock && <span className="field-error">{errors.countInStock}</span>}
+            </div>
             <input
-              name="stock"
+              name="countInStock"
               type="number"
               min="0"
               defaultValue={product?.stock}
             />
           </label>
           <label>
-            Category
+            <div className="label-header">
+              <span>Category</span>
+              {errors.category && <span className="field-error">{errors.category}</span>}
+            </div>
             <select name="category" defaultValue={product?.category || ""}>
               <option value="">Choose category</option>
-              {categories.map((category) => (
-                <option key={category}>{category}</option>
+              {fetchedCategories.map((category) => (
+                <option key={category} value={category}>{category}</option>
               ))}
             </select>
           </label>
+          <label>
+            <div className="label-header">
+              <span>Weight (kg)</span>
+              {errors.weight && <span className="field-error">{errors.weight}</span>}
+            </div>
+            <input
+              name="weight"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={product?.weight}
+            />
+          </label>
+          <label>
+            <div className="label-header">
+              <span>Brand</span>
+              {errors.brand && <span className="field-error">{errors.brand}</span>}
+            </div>
+            <input
+              name="brand"
+              type="text"
+              defaultValue={product?.brand}
+            />
+          </label>
         </div>
         <label>
-          Long product information
-          <textarea name="longInformation" rows={5} />
+          <div className="label-header">
+            <span>Long product information</span>
+            {errors.info && <span className="field-error">{errors.info}</span>}
+          </div>
+          <textarea
+            name="info"
+            rows={5}
+            defaultValue={product?.info}
+          />
         </label>
       </div>
       <div className="editor-side">
+        <div className="label-header">
+          <span style={{ fontWeight: 600, color: "#6e6e69", fontSize: "12px" }}>Product images</span>
+          {errors.image && <span className="field-error">{errors.image}</span>}
+        </div>
         <label
           className="dropzone"
           onDragOver={(event) => event.preventDefault()}

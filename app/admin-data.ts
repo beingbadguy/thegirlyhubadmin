@@ -28,6 +28,7 @@ export type Order = {
   items: number;
   payment: string;
   delivery: string;
+  raw?: any;
 };
 
 export type OrderStatus =
@@ -38,6 +39,28 @@ export type OrderStatus =
   | "delivered"
   | "completed"
   | "cancelled";
+
+export function normalizeOrder(order: any): Order {
+  const itemsCount = Array.isArray(order.products)
+    ? order.products.reduce((acc: number, p: any) => acc + Number(p.quantity || 0), 0)
+    : 0;
+
+  const payment = order.paymentMethod === "cod" ? "COD" : (order.paymentMethod || "COD");
+  const delivery = order.deliveryType === "normal" ? "Normal" : (order.deliveryType || "Normal");
+
+  return {
+    id: order._id || order.id || "",
+    customer: order.recipientName || order.userId?.name || "Guest Customer",
+    email: order.email || order.userId?.email || "No email",
+    date: order.createdAt || order.date || "",
+    total: order.totalAmount ?? order.total ?? 0,
+    status: order.status || "processing",
+    items: itemsCount,
+    payment,
+    delivery,
+    raw: order,
+  };
+}
 
 export type Coupon = {
   id: string;

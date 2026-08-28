@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const DEFAULT_PAGE_SIZE = 8;
 
@@ -44,24 +45,24 @@ export function Pagination({
       <span className="tabular-nums">
         Page {page} of {pageCount}
       </span>
-      <div>
+      <div className="flex gap-1">
         <button
           type="button"
-          className="grid h-8 w-8 place-items-center rounded-md text-lg text-[#777] transition hover:bg-[#f1f1ed] disabled:cursor-not-allowed disabled:opacity-40"
+          className="grid h-8 w-8 place-items-center rounded-md text-[#777] transition hover:bg-[#f1f1ed] disabled:cursor-not-allowed disabled:opacity-40"
           disabled={page === 1}
           onClick={() => onPageChange(page - 1)}
           aria-label="Previous page"
         >
-          ‹
+          <ChevronLeft size={20} />
         </button>
         <button
           type="button"
-          className="grid h-8 w-8 place-items-center rounded-md text-lg text-[#777] transition hover:bg-[#f1f1ed] disabled:cursor-not-allowed disabled:opacity-40"
+          className="grid h-8 w-8 place-items-center rounded-md text-[#777] transition hover:bg-[#f1f1ed] disabled:cursor-not-allowed disabled:opacity-40"
           disabled={page === pageCount}
           onClick={() => onPageChange(page + 1)}
           aria-label="Next page"
         >
-          ›
+          <ChevronRight size={20} />
         </button>
       </div>
     </nav>

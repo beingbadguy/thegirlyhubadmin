@@ -226,7 +226,7 @@ export default function CustomersPage() {
         !q ||
         cust.name.toLowerCase().includes(q) ||
         cust.email.toLowerCase().includes(q) ||
-        (cust.phone && cust.phone.includes(q)) ||
+        (cust.phone && String(cust.phone).toLowerCase().includes(q)) ||
         cust.id.toLowerCase().includes(q);
 
       const matchesStatus =

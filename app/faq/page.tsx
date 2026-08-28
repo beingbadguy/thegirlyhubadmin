@@ -220,7 +220,7 @@ function FaqEditor({
       >
         <div className="modal-head">
           <div>
-            <p className="eyebrow">Help content</p>
+            {/* <p className="eyebrow">Help content</p> */}
             <h2 id="faq-editor-title">{faq ? "Edit FAQ" : "Add FAQ"}</h2>
           </div>
           <button

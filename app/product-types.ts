@@ -10,9 +10,13 @@ export type ApiProduct = {
   price?: number | string;
   discountedPrice?: number | string;
   stock?: number | string;
+  countInStock?: number | string;
   category?: string | { name?: string; _id?: string };
   active?: boolean;
   isActive?: boolean;
+  info?: string;
+  weight?: number | string;
+  brand?: string;
 };
 
 export type ProductRecord = {
@@ -26,6 +30,9 @@ export type ProductRecord = {
   stock: number;
   category: string;
   active: boolean;
+  info: string;
+  weight: number;
+  brand: string;
 };
 
 export function normalizeProduct(product: ApiProduct): ProductRecord {
@@ -43,13 +50,16 @@ export function normalizeProduct(product: ApiProduct): ProductRecord {
     description: product.description || "",
     image: images[0] || "",
     images,
-    originalPrice: Number(product.originalPrice ?? product.price ?? 0),
+    originalPrice: Number(product.price ?? product.originalPrice ?? 0),
     price,
-    stock: Number(product.stock ?? 0),
+    stock: Number(product.countInStock ?? product.stock ?? 0),
     category:
       typeof product.category === "string"
         ? product.category
         : product.category?.name || "Uncategorised",
     active: product.isActive ?? product.active ?? true,
+    info: product.info || "",
+    weight: Number(product.weight ?? 0),
+    brand: product.brand || "",
   };
 }

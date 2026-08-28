@@ -16,6 +16,7 @@ import {
   Tag,
   Users,
   X,
+  Mail,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -31,7 +32,8 @@ const navigation = [
   ["/support", "Support", MessageCircle],
   ["/faq", "FAQ", HelpCircle],
   ["/banners", "Banners", Images],
-  ["/others", "Coupons", Tag],
+  ["/coupons", "Coupons", Tag],
+  ["/others", "Newsletter", Mail],
 ] as const;
 
 export function AdminShell({
@@ -164,7 +166,7 @@ export function AdminShell({
             <b>{navigation.find(([href]) => href === active)?.[1] || "Add"}</b>
           </div>
           <div className="top-actions">
-            <a className="storefront" href="#storefront">
+            <a className="storefront" target="_blank" href="https://girlyhub.vercel.app">
               View storefront
             </a>
             <button className="icon-button" aria-label="Notifications">

@@ -9,6 +9,8 @@ import { ProductEditor } from "../product-editor";
 import { useProductStore } from "../product-store";
 import type { ProductRecord } from "../product-types";
 import { ConfirmDialog, SkeletonRows, Toast } from "../ui";
+import Image from "next/image";
+import image from "next/image";
 
 export default function ProductsPage() {
   const store = useProductStore();
@@ -65,9 +67,10 @@ export default function ProductsPage() {
         }
       />
       <div className="filter-toolbar">
-        <label className="search-box">
+        <label className="search-box flex items-center gap-2 rounded-lg border border-[#e9e8e5] bg-white px-3 text-[#999] shadow-sm focus-within:border-[#db4d79] focus-within:ring-4 focus-within:ring-[#fce7ee] transition max-w-sm">
           <Search size={17} />
           <input
+            className="w-full bg-transparent py-2.5 outline-none border-0 text-sm"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -127,12 +130,17 @@ export default function ProductsPage() {
                 <tr key={product.id}>
                   <td>
                     <div className="product-cell">
-                      <span
-                        className="product-swatch"
-                        style={{ background: product.image }}
-                      >
-                        G
-                      </span>
+                      <div className="product-swatch rounded-lg overflow-hidden border border-[#e9e8e5] bg-[#fcfcfa] flex items-center justify-center flex-shrink-0">
+                        {product.image ? (
+                          <img
+                            src={product.image}
+                            alt={product.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs font-bold text-pink-600">G</span>
+                        )}
+                      </div>
                       <b>{product.title}</b>
                     </div>
                   </td>
