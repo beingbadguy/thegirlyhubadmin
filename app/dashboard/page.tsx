@@ -42,7 +42,7 @@ export default function DashboardPage() {
   return (
     <AdminShell active="/dashboard">
       <PageTitle
-        title="Good morning, Amelia"
+        title="Good morning, Aman"
         description="Here is what is happening with your store today."
       />
       {(ordersResource.error || productsResource.error || usersResource.error) && (
