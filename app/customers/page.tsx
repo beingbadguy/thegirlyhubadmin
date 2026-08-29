@@ -39,6 +39,7 @@ import {
   customersRegistry,
   formatCurrency,
   formatDate,
+  normalizeOrder,
   type CustomerRecord,
 } from "../admin-data";
 import { AdminShell, PageTitle } from "../admin-shared";
@@ -124,12 +125,12 @@ export default function CustomersPage() {
                 role: u.role || (u.isAdmin ? "admin" : "customer"),
                 status: "active",
                 totalSpent: (u.orderCount || 1) * 140,
-                orderCount: u.orderCount || 1,
-                cartCount: (idx % 3) + 1,
-                wishlistCount: (idx % 4) + 1,
+                orderCount: Array.isArray(u.order) ? u.order.length : (u.orderCount || 0),
+                cartCount: Array.isArray(u.cart) ? u.cart.reduce((sum: number, c: any) => sum + (c.products?.length || 0), 0) : 0,
+                wishlistCount: Array.isArray(u.wishlist) ? u.wishlist.reduce((sum: number, w: any) => sum + (w.products?.length || 0), 0) : 0,
                 avgOrderValue: 140,
                 createdAt: u.createdAt || "2026-03-01T00:00:00Z",
-                lastActive: "2026-08-27T00:00:00Z",
+                lastActive: u.updatedAt || u.lastActive || "2026-08-27T00:00:00Z",
                 addresses: [
                   {
                     id: `addr_api_${idx}`,
@@ -137,51 +138,50 @@ export default function CustomersPage() {
                     isDefault: true,
                     name: u.name || "Customer",
                     phone: u.phone || "+91 98000 00000",
-                    street: "100ft Luxury Road",
-                    city: "Mumbai",
-                    state: "Maharashtra",
-                    postalCode: "400050",
+                    street: u.address || "100ft Luxury Road",
+                    city: u.city || "Mumbai",
+                    state: u.state || "Maharashtra",
+                    postalCode: String(u.zip || "400050"),
                     country: "India",
                   },
                 ],
-                cart: [
-                  {
-                    productId: "p1",
-                    title: "Cloud Knit Co-Ord",
-                    price: 49,
-                    originalPrice: 68,
-                    quantity: 1,
-                    image: "#f4c9c2",
-                    category: "Loungewear",
-                    inStock: true,
-                    addedAt: new Date().toISOString(),
-                  },
-                ],
-                wishlist: [
-                  {
-                    productId: "p2",
-                    title: "Cherry Cola Mini Dress",
-                    price: 62,
-                    originalPrice: 82,
-                    image: "#d63c56",
-                    category: "Dresses",
-                    inStock: true,
-                    addedAt: new Date().toISOString(),
-                  },
-                ],
-                orders: [
-                  {
-                    id: `GH-10${480 + idx}`,
-                    customer: u.name || "Customer",
-                    email: u.email || "",
-                    date: "Aug 26, 2026",
-                    total: 140,
-                    status: "delivered",
-                    items: 2,
-                    payment: "Visa",
-                    delivery: "Standard",
-                  },
-                ],
+                cart: Array.isArray(u.cart) ? u.cart.flatMap((c: any) => (c.products || []).map((p: any) => ({
+                  productId: p.productId?._id || "",
+                  title: p.productId?.title || "Unknown Product",
+                  price: p.productId?.discountedPrice || p.productId?.price || 0,
+                  originalPrice: p.productId?.price || 0,
+                  quantity: p.quantity || 1,
+                  image: p.productId?.image || p.productId?.images?.[0] || "",
+                  category: p.productId?.category || "Unknown",
+                  inStock: (p.productId?.stock || p.productId?.countInStock || 0) > 0,
+                  addedAt: c.createdAt || new Date().toISOString(),
+                }))) : [],
+                wishlist: Array.isArray(u.wishlist) ? u.wishlist.flatMap((w: any) => (w.products || []).map((p: any) => ({
+                  productId: p.productId?._id || "",
+                  title: p.productId?.title || "Unknown Product",
+                  price: p.productId?.discountedPrice || p.productId?.price || 0,
+                  originalPrice: p.productId?.price || 0,
+                  image: p.productId?.image || p.productId?.images?.[0] || "",
+                  category: p.productId?.category || "Unknown",
+                  inStock: (p.productId?.stock || p.productId?.countInStock || 0) > 0,
+                  addedAt: w.createdAt || new Date().toISOString(),
+                }))) : [],
+                orders: Array.isArray(u.order) ? u.order.map((oid: any) => {
+                  if (typeof oid === 'string') {
+                     return {
+                        id: oid,
+                        customer: u.name || "Customer",
+                        email: u.email || "",
+                        date: u.createdAt || "",
+                        total: 0,
+                        status: "completed",
+                        items: 1,
+                        payment: "Online",
+                        delivery: "Standard",
+                     };
+                  }
+                  return normalizeOrder(oid);
+                }) : [],
                 notes: ["Synchronized from live user account."],
                 activityLogs: [
                   {

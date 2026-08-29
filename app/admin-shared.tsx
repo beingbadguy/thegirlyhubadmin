@@ -120,7 +120,6 @@ export function AdminShell({
             >
               <Icon size={18} />
               <span>{label}</span>
-              {label === "Support" && <em>2</em>}
             </Link>
           ))}
         </nav>

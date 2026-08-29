@@ -43,9 +43,10 @@ export const useProductStore = create<ProductState>((set, get) => ({
   toggleProduct: async (product) => {
     set({ mutationId: product.id, error: "" });
     try {
-      await api.put(`/api/product/${product.id}`, {
-        active: !product.active,
+      await api.put(`/api/product`, {
+        // active: !product.active,
         isActive: !product.active,
+        id:product.id,
       });
       set({
         products: get().products.map((item) =>

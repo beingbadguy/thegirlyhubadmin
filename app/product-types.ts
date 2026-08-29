@@ -4,6 +4,7 @@ export type ApiProduct = {
   title?: string;
   name?: string;
   description?: string;
+  images?: string | string[];
   productImage?: string | string[];
   image?: string;
   originalPrice?: number | string;
@@ -36,13 +37,14 @@ export type ProductRecord = {
 };
 
 export function normalizeProduct(product: ApiProduct): ProductRecord {
-  const images = Array.isArray(product.productImage)
-    ? product.productImage
-    : product.productImage
-      ? [product.productImage]
-      : product.image
-        ? [product.image]
-        : [];
+  // Resolve images from all possible API field names:
+  // `images` (array) → `productImage` (string|array) → `image` (string)
+  const rawImages = product.images ?? product.productImage ?? product.image;
+  const images: string[] = Array.isArray(rawImages)
+    ? rawImages.filter(Boolean)
+    : rawImages
+      ? [rawImages]
+      : [];
   const price = Number(product.discountedPrice ?? product.price ?? 0);
   return {
     id: product._id || product.id || crypto.randomUUID(),

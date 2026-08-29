@@ -1,62 +1,97 @@
 "use client";
 
+import { ExternalLink, Eye, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
-import { Eye, X } from "lucide-react";
 import {
   formatCurrency,
   formatDate,
   formatDateTime,
   normalizeOrder,
   type Order,
-  type OrderStatus,
 } from "../admin-data";
 import { AdminShell, Empty, PageTitle } from "../admin-shared";
-import { api, getApiError } from "../api-client";
 import { Pagination, usePagination } from "../pagination";
 import { useApiResource } from "../use-api-resource";
+import type { OrderStatusValue } from "./order-types";
+import { ORDERED_FLOW, STATUS_META, STATUS_TRANSITIONS } from "./order-types";
+import { OrderTimeline } from "./order-timeline";
+import { StatusModal } from "./status-modal";
 
-const statuses: OrderStatus[] = [
-  "processing",
-  "reviewing",
-  "preparing",
-  "shipped",
-  "delivered",
-  "completed",
-  "cancelled",
-];
+// ─── Status badge ────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const meta = STATUS_META[status as OrderStatusValue] ?? {
+    label: status,
+    color: "#6b6b6b",
+    bg: "#f0f0ed",
+    icon: "·",
+  };
+  return (
+    <span
+      className="order-status-badge"
+      style={{ color: meta.color, background: meta.bg }}
+    >
+      {meta.icon} {meta.label}
+    </span>
+  );
+}
 
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function OrdersPage() {
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
-  const resource = useApiResource<any[] | { orders: any[] }>(
-    "/api/orders",
-    [],
-  );
+  const [updatingOrder, setUpdatingOrder] = useState<Order | null>(null);
+
+  const resource = useApiResource<any>("/api/orders", []);
   const rawOrders = Array.isArray(resource.data)
     ? resource.data
-    : resource.data.orders || [];
-  const orders = rawOrders.map(normalizeOrder);
-  const pagination = usePagination(orders);
+    : resource.data?.orders || [];
+  const orders: Order[] = rawOrders.map(normalizeOrder);
+  const pagination = usePagination<Order>(orders);
 
-  const updateStatus = async (id: string, status: OrderStatus) => {
-    try {
-      await api.put(`/api/orders/${id}`, { status });
-      await resource.refresh();
-      if (viewingOrder && viewingOrder.id === id) {
-        setViewingOrder((prev) => prev ? { ...prev, status } : null);
-      }
-    } catch (error) {
-      alert(getApiError(error, "Order status update failed."));
+  /** Called by StatusModal on successful update */
+  const handleStatusUpdated = (
+    id: string,
+    newStatus: OrderStatusValue,
+    awb?: string,
+  ) => {
+    resource.refresh();
+    if (viewingOrder?.id === id) {
+      setViewingOrder((prev) =>
+        prev
+          ? {
+            ...prev,
+            status: newStatus,
+            raw: { ...prev.raw, awbNumber: awb ?? prev.raw?.awbNumber },
+          }
+          : null,
+      );
     }
+    setUpdatingOrder(null);
   };
 
   return (
     <AdminShell active="/orders">
-      <PageTitle title="Orders" description="Track and fulfil every customer order." />
+      <PageTitle
+        title="Orders"
+        description="Track and fulfil every customer order."
+        action={
+          <button
+            className="button soft icon-button-label"
+            onClick={() => resource.refresh()}
+            disabled={resource.loading}
+          >
+            <RefreshCw size={14} className={resource.loading ? "spin" : ""} />
+            Refresh
+          </button>
+        }
+      />
+
       <div className="panel table-panel">
         {resource.error ? (
           <Empty text={resource.error} />
         ) : resource.loading ? (
-          <Empty text="Loading orders..." />
+          <Empty text="Loading orders…" />
+        ) : orders.length === 0 ? (
+          <Empty text="No orders yet." />
         ) : (
           <>
             <table>
@@ -71,50 +106,66 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagination.visibleItems.map((order) => (
-                  <tr key={order.id}>
-                    <td>
-                      <b>{order.id}</b>
-                      <small className="cell-sub">
-                        {order.items} items · {order.delivery}
-                      </small>
-                    </td>
-                    <td>
-                      <b>{order.customer}</b>
-                      <small className="cell-sub">{order.email}</small>
-                    </td>
-                    <td>{formatDate(order.date)}</td>
-                    <td>{formatCurrency(order.total)}</td>
-                    <td>
-                      <select
-                        disabled={resource.loading}
-                        value={order.status}
-                        onChange={(event) =>
-                          void updateStatus(
-                            order.id,
-                            event.target.value as OrderStatus,
-                          )
-                        }
-                      >
-                        {statuses.map((status) => (
-                          <option key={status}>{status}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          className="icon-button"
-                          onClick={() => setViewingOrder(order)}
-                          aria-label={`View order ${order.id}`}
-                          title="View order details"
-                        >
-                          <Eye size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {pagination.visibleItems.map((order) => {
+                  const canUpdate =
+                    (STATUS_TRANSITIONS[order.status as OrderStatusValue] ?? []).length > 0;
+                  const raw = order.raw || {};
+
+                  return (
+                    <tr key={order.id}>
+                      <td>
+                        <b>{order.id}</b>
+                        <small className="cell-sub">
+                          {order.items} item{order.items !== 1 ? "s" : ""} · {order.delivery} · {raw.paymentMethod === "online" ? <span style={{ color: "#16a34a", fontWeight: 600 }}>Paid</span> : <span style={{ color: "#d97706", fontWeight: 600 }}>COD</span>}
+                        </small>
+                      </td>
+                      <td>
+                        <b>{order.customer}</b>
+                        <small className="cell-sub">{order.email}</small>
+                      </td>
+                      <td>{formatDate(order.date)}</td>
+                      <td>
+                        <b>{formatCurrency(order.total)}</b>
+                      </td>
+                      <td>
+                        <StatusBadge status={order.status} />
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="icon-button"
+                            onClick={() => setViewingOrder(order)}
+                            aria-label={`View order ${order.id}`}
+                            title="View details"
+                          >
+                            <Eye size={15} />
+                          </button>
+                          {canUpdate && (
+                            <button
+                              className="button soft btn-xs"
+                              onClick={() => setUpdatingOrder(order)}
+                              title="Update status"
+                            >
+                              Update
+                            </button>
+                          )}
+                          {raw.trackingLink && (
+                            <a
+                              href={raw.trackingLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="icon-button"
+                              title="View tracking"
+                              aria-label="View tracking link"
+                            >
+                              <ExternalLink size={15} />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             <Pagination
@@ -126,118 +177,179 @@ export default function OrdersPage() {
         )}
       </div>
 
+      {/* Order Details Modal */}
       {viewingOrder && (
         <OrderDetailsModal
           order={viewingOrder}
           onClose={() => setViewingOrder(null)}
+          onUpdateStatus={() => {
+            setUpdatingOrder(viewingOrder);
+            setViewingOrder(null);
+          }}
+        />
+      )}
+
+      {/* Update Status Modal */}
+      {updatingOrder && (
+        <StatusModal
+          order={updatingOrder}
+          onClose={() => setUpdatingOrder(null)}
+          onUpdated={handleStatusUpdated}
         />
       )}
     </AdminShell>
   );
 }
 
+// ─── Order Details Modal ──────────────────────────────────────────────────────
 function OrderDetailsModal({
   order,
   onClose,
+  onUpdateStatus,
 }: {
   order: Order;
   onClose: () => void;
+  onUpdateStatus: () => void;
 }) {
   const raw = order.raw || {};
   const products = raw.products || [];
+  const history = raw.statusHistory || [];
+  const canUpdate =
+    (STATUS_TRANSITIONS[order.status as OrderStatusValue] ?? []).length > 0;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal"
-        onClick={(event) => event.stopPropagation()}
-        style={{ width: "min(850px, 95%)", maxHeight: "90vh", overflowY: "auto" }}
+        className="modal order-details-modal"
+        onClick={(e) => e.stopPropagation()}
       >
+        {/* ── Header ── */}
         <div className="modal-head">
           <div>
-            <h2 id="order-details-title" className="font-bold text-lg">Order Details</h2>
-            <span className="font-mono text-xs text-[#888]">ID: {order.id}</span>
+            <h2 id="order-details-title">Order Details</h2>
+            <span className="modal-sub font-mono">#{order.id}</span>
           </div>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onClose}
-            aria-label="Close details"
-          >
-            <X size={18} />
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {canUpdate && (
+              <button className="button btn-sm" onClick={onUpdateStatus}>
+                Update Status
+              </button>
+            )}
+            <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        <div className="grid gap-5 mt-5">
-          {/* Top summary row */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#efefec] pb-4">
-            <div className="flex items-center gap-2">
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                order.status === "completed" || order.status === "delivered"
-                  ? "bg-[#e2f1e3] text-[#4b8c5d]"
-                  : order.status === "cancelled"
-                  ? "bg-[#fbecec] text-[#c95656]"
-                  : "bg-[#fbe7ed] text-[#db4d79]"
-              }`}>
-                {order.status}
-              </span>
-              <span className="text-xs text-[#999]">
-                Placed on {formatDateTime(raw.createdAt || raw.date)}
+        <div className="order-details-body">
+          {/* ── Top status + total bar ── */}
+          <div className="order-details-topbar">
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <StatusBadge status={order.status} />
+              <span className="text-muted" style={{ fontSize: 12 }}>
+                Placed {formatDateTime(raw.createdAt || raw.date)}
               </span>
             </div>
-            <strong className="text-[#db4d79] text-base">{formatCurrency(order.total)}</strong>
+            <strong style={{ color: "var(--pink)", fontSize: 16 }}>
+              {formatCurrency(order.total)}
+            </strong>
           </div>
 
-          {/* Info blocks layout */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 border-b border-[#efefec] pb-5">
-            {/* Customer Section */}
-            <div className="grid gap-2 content-start">
-              <h3 className="text-xs font-bold text-[#292929] uppercase tracking-wider">Customer</h3>
-              <div className="grid gap-1 text-xs text-[#6e6e69]">
-                <span><b>Name:</b> {raw.userId?.name || order.customer || "Guest"}</span>
-                <span><b>Email:</b> {raw.userId?.email || order.email || "N/A"}</span>
-                <span><b>Role:</b> <span className="uppercase text-[10px] font-bold bg-[#f1f1ed] px-1 py-0.5 rounded">{raw.userId?.role || "user"}</span></span>
-                <span><b>User ID:</b> <small className="font-mono bg-[#f6f6f3] px-1 rounded">{raw.userId?._id || "N/A"}</small></span>
-              </div>
-            </div>
+          {/* ── Timeline ── */}
+          <section className="order-section">
+            <h3 className="order-section-title">Status Timeline</h3>
+            <OrderTimeline
+              currentStatus={order.status as OrderStatusValue}
+              history={history}
+            />
+          </section>
 
-            {/* Address Section */}
-            <div className="grid gap-2 content-start">
-              <h3 className="text-xs font-bold text-[#292929] uppercase tracking-wider">Shipping Address</h3>
-              <div className="grid gap-1 text-xs text-[#6e6e69]">
-                <span><b>Recipient:</b> {raw.recipientName || order.customer || "N/A"}</span>
-                <span><b>Phone:</b> {raw.phone || "N/A"}</span>
-                <span><b>Street:</b> {raw.address || "N/A"}</span>
-                <span><b>Landmark:</b> {raw.landmark || "N/A"}</span>
-                <span><b>City/State:</b> {raw.city || "N/A"}, {raw.state || "N/A"}</span>
-                <span><b>ZIP Code:</b> {raw.zip || "N/A"}</span>
-                <span><b>Delivery Type:</b> <span className="capitalize">{raw.deliveryType || "normal"}</span></span>
-              </div>
-            </div>
+          {/* Tracking link if available */}
+          {raw.trackingLink && (
+            <a
+              href={raw.trackingLink}
+              target="_blank"
+              rel="noreferrer"
+              className="tracking-view-btn"
+            >
+              <ExternalLink size={13} /> View Tracking — {raw.awbNumber || ""}
+            </a>
+          )}
 
-            {/* Payment Section */}
-            <div className="grid gap-2 content-start">
-              <h3 className="text-xs font-bold text-[#292929] uppercase tracking-wider">Payment Details</h3>
-              <div className="grid gap-1 text-xs text-[#6e6e69]">
-                <span><b>Method:</b> <span className="uppercase text-[10px] font-bold bg-[#f1f1ed] px-1 py-0.5 rounded">{raw.paymentMethod || "COD"}</span></span>
-                <span><b>Transaction ID:</b> {raw.paymentId || "N/A"}</span>
-                <span><b>Coupon Applied:</b> {raw.couponCode ? <code className="bg-[#fce7ee] text-[#db4d79] px-1 rounded font-bold">{raw.couponCode}</code> : "None"}</span>
-                <span><b>Notes:</b> {raw.orderNotes || "No notes"}</span>
-              </div>
-            </div>
+          {/* ── Info grid ── */}
+          <div className="order-info-grid">
+            {/* Customer */}
+            <section className="order-info-card">
+              <h3 className="order-section-title">Customer</h3>
+              <dl className="info-list">
+                <dt>Name</dt>
+                <dd>{raw.userId?.name || order.customer || "Guest"}</dd>
+                <dt>Email</dt>
+                <dd>{raw.userId?.email || order.email || "N/A"}</dd>
+                <dt>Role</dt>
+                <dd>
+                  <span className="pill">{raw.userId?.role || "user"}</span>
+                </dd>
+              </dl>
+            </section>
+
+            {/* Shipping */}
+            <section className="order-info-card">
+              <h3 className="order-section-title">Shipping</h3>
+              <dl className="info-list">
+                <dt>Recipient</dt>
+                <dd>{raw.recipientName || order.customer || "N/A"}</dd>
+                <dt>Phone</dt>
+                <dd>{raw.phone || "N/A"}</dd>
+                <dt>Address</dt>
+                <dd>{raw.address || "N/A"}</dd>
+                <dt>City / State</dt>
+                <dd>{[raw.city, raw.state].filter(Boolean).join(", ") || "N/A"}</dd>
+                <dt>PIN</dt>
+                <dd>{raw.zip || "N/A"}</dd>
+                <dt>Delivery</dt>
+                <dd className="capitalize">{raw.deliveryType || "Normal"}</dd>
+              </dl>
+            </section>
+
+            {/* Payment */}
+            <section className="order-info-card">
+              <h3 className="order-section-title">Payment</h3>
+              <dl className="info-list">
+                <dt>Method</dt>
+                <dd>
+                  <span className="pill">{raw.paymentMethod || "COD"}</span>
+                </dd>
+                <dt>Transaction ID</dt>
+                <dd>{raw.paymentId || "N/A"}</dd>
+                <dt>Coupon</dt>
+                <dd>
+                  {raw.couponCode ? (
+                    <code className="coupon-code">{raw.couponCode}</code>
+                  ) : (
+                    "None"
+                  )}
+                </dd>
+                <dt>Notes</dt>
+                <dd>{raw.orderNotes || "—"}</dd>
+              </dl>
+            </section>
           </div>
 
-          {/* Product Items Table */}
-          <div className="grid gap-3">
-            <h3 className="text-xs font-bold text-[#292929] uppercase tracking-wider">Items Ordered ({products.length})</h3>
-            <div className="border border-[#e9e8e5] rounded-xl overflow-hidden bg-white shadow-sm">
+          {/* ── Items ── */}
+          <section className="order-section">
+            <h3 className="order-section-title">
+              Items Ordered
+              <span className="order-section-count">{products.length}</span>
+            </h3>
+            <div className="order-items-table-wrap">
               <table style={{ margin: 0, width: "100%" }}>
                 <thead>
-                  <tr style={{ background: "#fcfcfa", borderBottom: "1px solid #e9e8e5" }}>
-                    <th style={{ padding: "10px 14px", fontSize: "11px", textAlign: "left" }}>Product</th>
-                    <th style={{ padding: "10px 14px", fontSize: "11px", textAlign: "right" }}>Price</th>
-                    <th style={{ padding: "10px 14px", fontSize: "11px", textAlign: "center", width: "80px" }}>Qty</th>
-                    <th style={{ padding: "10px 14px", fontSize: "11px", textAlign: "right", width: "120px" }}>Subtotal</th>
+                  <tr>
+                    <th>Product</th>
+                    <th style={{ textAlign: "right" }}>Price</th>
+                    <th style={{ textAlign: "center", width: 70 }}>Qty</th>
+                    <th style={{ textAlign: "right", width: 110 }}>Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -246,38 +358,63 @@ function OrderDetailsModal({
                     const qty = Number(item.quantity || 1);
                     const subtotal = price * qty;
                     return (
-                      <tr key={item._id || idx} style={{ borderBottom: idx < products.length - 1 ? "1px solid #efefec" : "none" }}>
+                      <tr
+                        key={item._id || idx}
+                        style={{
+                          borderBottom:
+                            idx < products.length - 1
+                              ? "1px solid var(--line)"
+                              : "none",
+                        }}
+                      >
                         <td style={{ padding: "12px 14px" }}>
-                          <div className="flex items-center gap-3">
+                          <div className="order-product-cell">
                             <img
-                              src={item.image || "https://res.cloudinary.com/datiquz4o/image/upload/v1744712803/basicsproduct/hdnmonwcw1gcbafan158.jpg"}
-                              alt={item.title || "Product item"}
-                              style={{
-                                width: "42px",
-                                height: "42px",
-                                borderRadius: "6px",
-                                border: "1px solid #e9e8e5",
-                                objectFit: "contain",
-                                background: "#fcfcfa",
-                              }}
+                              src={
+                                item.image ||
+                                "https://res.cloudinary.com/datiquz4o/image/upload/v1744712803/basicsproduct/hdnmonwcw1gcbafan158.jpg"
+                              }
+                              alt={item.title || "Product"}
+                              className="order-product-thumb"
                             />
                             <div>
-                              <b style={{ fontSize: "12px", display: "block" }}>{item.title}</b>
+                              <b style={{ fontSize: 13 }}>{item.title}</b>
                               {item.size && (
-                                <span className="text-[10px] bg-[#f1f1ed] px-1.5 py-0.5 rounded text-[#777] font-bold uppercase mt-1 inline-block">
+                                <span className="pill pill-xs mt-1">
                                   Size: {item.size}
                                 </span>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", verticalAlign: "middle" }} className="tabular-nums font-semibold">
+                        <td
+                          style={{
+                            padding: "12px 14px",
+                            textAlign: "right",
+                            verticalAlign: "middle",
+                            fontWeight: 600,
+                          }}
+                        >
                           {formatCurrency(price)}
                         </td>
-                        <td style={{ padding: "12px 14px", textAlign: "center", verticalAlign: "middle" }} className="tabular-nums font-medium text-[#777]">
+                        <td
+                          style={{
+                            padding: "12px 14px",
+                            textAlign: "center",
+                            verticalAlign: "middle",
+                            color: "var(--muted)",
+                          }}
+                        >
                           {qty}
                         </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", verticalAlign: "middle" }} className="tabular-nums font-bold">
+                        <td
+                          style={{
+                            padding: "12px 14px",
+                            textAlign: "right",
+                            verticalAlign: "middle",
+                            fontWeight: 700,
+                          }}
+                        >
                           {formatCurrency(subtotal)}
                         </td>
                       </tr>
@@ -286,7 +423,7 @@ function OrderDetailsModal({
                 </tbody>
               </table>
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>

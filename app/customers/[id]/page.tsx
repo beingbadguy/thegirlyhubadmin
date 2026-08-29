@@ -43,6 +43,7 @@ import {
   formatDateTime,
   getCustomerById,
   type CustomerRecord,
+  type Order,
   type OrderStatus,
   type UserCartItem,
   type UserWishlistItem,
@@ -50,6 +51,8 @@ import {
 import { AdminShell } from "../../admin-shared";
 import { api, getApiError } from "../../api-client";
 import { ConfirmDialog, Toast } from "../../ui";
+import { StatusModal } from "../../orders/status-modal";
+import { STATUS_META, type OrderStatusValue } from "../../orders/order-types";
 
 const allOrderStatuses: OrderStatus[] = [
   "processing",
@@ -86,6 +89,7 @@ export default function CustomerDetailPage() {
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [updatingOrder, setUpdatingOrder] = useState<Order | null>(null);
 
   // Form states
   const [newNote, setNewNote] = useState("");
@@ -133,6 +137,56 @@ export default function CustomerDetailPage() {
                 role: liveUser.role || prev.role,
                 status: liveUser.status || prev.status,
                 verified: liveUser.isVerified ?? liveUser.verified ?? prev.verified,
+                cart: Array.isArray(liveUser.cart) && liveUser.cart.length > 0 ? liveUser.cart.flatMap((c: any) => (c.products || []).map((p: any) => ({
+                  productId: p.productId?._id || "",
+                  title: p.productId?.title || "Unknown Product",
+                  price: p.productId?.discountedPrice || p.productId?.price || 0,
+                  originalPrice: p.productId?.price || 0,
+                  quantity: p.quantity || 1,
+                  image: p.productId?.image || p.productId?.images?.[0] || "",
+                  category: p.productId?.category || "Unknown",
+                  inStock: (p.productId?.stock || p.productId?.countInStock || 0) > 0,
+                  addedAt: c.createdAt || new Date().toISOString(),
+                }))) : prev.cart,
+                wishlist: Array.isArray(liveUser.wishlist) && liveUser.wishlist.length > 0 ? liveUser.wishlist.flatMap((w: any) => (w.products || []).map((p: any) => ({
+                  productId: p.productId?._id || "",
+                  title: p.productId?.title || "Unknown Product",
+                  price: p.productId?.discountedPrice || p.productId?.price || 0,
+                  originalPrice: p.productId?.price || 0,
+                  image: p.productId?.image || p.productId?.images?.[0] || "",
+                  category: p.productId?.category || "Unknown",
+                  inStock: (p.productId?.stock || p.productId?.countInStock || 0) > 0,
+                  addedAt: w.createdAt || new Date().toISOString(),
+                }))) : prev.wishlist,
+                orders: Array.isArray(liveUser.order) && liveUser.order.length > 0 ? liveUser.order.map((oid: any) => {
+                  if (typeof oid === 'string') {
+                     return {
+                        id: oid,
+                        customer: liveUser.name || "Customer",
+                        email: liveUser.email || "",
+                        date: liveUser.createdAt || "",
+                        total: 0,
+                        status: "completed",
+                        items: 1,
+                        payment: "Online",
+                        delivery: "Standard",
+                     };
+                  }
+                  return prev.orders.find(o => o.id === (oid._id || oid.id)) || {
+                        id: oid._id || oid.id || "",
+                        customer: liveUser.name || "Customer",
+                        email: liveUser.email || "",
+                        date: oid.createdAt || "",
+                        total: oid.totalAmount || 0,
+                        status: oid.status || "completed",
+                        items: 1,
+                        payment: "Online",
+                        delivery: "Standard",
+                  };
+                }) : prev.orders,
+                orderCount: Array.isArray(liveUser.order) ? liveUser.order.length : prev.orderCount,
+                cartCount: Array.isArray(liveUser.cart) ? liveUser.cart.reduce((sum: number, c: any) => sum + (c.products?.length || 0), 0) : prev.cartCount,
+                wishlistCount: Array.isArray(liveUser.wishlist) ? liveUser.wishlist.reduce((sum: number, w: any) => sum + (w.products?.length || 0), 0) : prev.wishlistCount,
               };
             });
           }
@@ -814,22 +868,31 @@ export default function CustomerDetailPage() {
                         <strong>{formatCurrency(order.total)}</strong>
                       </td>
                       <td>
-                        <select
-                          className={`order-status-select status-${order.status}`}
-                          value={order.status}
-                          onChange={(e) =>
-                            void handleOrderStatusUpdate(
-                              order.id,
-                              e.target.value as OrderStatus,
-                            )
-                          }
-                        >
-                          {allOrderStatuses.map((st) => (
-                            <option key={st} value={st}>
-                              {st}
-                            </option>
-                          ))}
-                        </select>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          {(() => {
+                            const meta = STATUS_META[order.status as OrderStatusValue] ?? {
+                              label: order.status,
+                              color: "#6b6b6b",
+                              bg: "#f0f0ed",
+                              icon: "·",
+                            };
+                            return (
+                              <span
+                                className="order-status-badge"
+                                style={{ color: meta.color, background: meta.bg, margin: 0 }}
+                              >
+                                {meta.icon} {meta.label}
+                              </span>
+                            );
+                          })()}
+                          <button
+                            className="button soft btn-xs"
+                            onClick={() => setUpdatingOrder(order)}
+                            title="Update status"
+                          >
+                            Update
+                          </button>
+                        </div>
                       </td>
                       <td>
                         <button
@@ -1443,6 +1506,29 @@ export default function CustomerDetailPage() {
             )
           }
           onClose={() => setShowSuspendDialog(false)}
+        />
+      )}
+
+      {updatingOrder && (
+        <StatusModal
+          order={updatingOrder}
+          onClose={() => setUpdatingOrder(null)}
+          onUpdated={(id, newStatus, awb) => {
+            setCustomer((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                orders: prev.orders.map((o) =>
+                  o.id === id ? { ...o, status: newStatus, raw: { ...o.raw, awbNumber: awb } } : o,
+                ),
+              };
+            });
+            setToastMsg({
+              text: `Order ${id} updated to ${newStatus}.`,
+              tone: "success",
+            });
+            setUpdatingOrder(null);
+          }}
         />
       )}
     </AdminShell>
