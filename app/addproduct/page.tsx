@@ -9,6 +9,7 @@ export default function AddProductPage() {
   const categories = Array.from(
     new Set(products.map((product) => product.category)),
   );
+
   return (
     <AdminShell active="/products">
       <PageTitle

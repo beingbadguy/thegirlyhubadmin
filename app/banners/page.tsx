@@ -22,6 +22,8 @@ type ApiBanner = {
   image?: string;
   bannerImage?: string;
   imageUrl?: string;
+  tabletImage?: string;
+  mobileImage?: string;
   title?: string;
   subtitle?: string;
   description?: string;
@@ -42,6 +44,8 @@ type Banner = {
   displayOrder: number;
   isActive: boolean;
   image: string;
+  tabletImage: string;
+  mobileImage: string;
   createdAt?: string;
 };
 
@@ -49,6 +53,8 @@ type BannerResponse = { banners?: ApiBanner[] };
 const normalize = (item: ApiBanner): Banner => ({
   _id: item._id,
   image: item.image || item.bannerImage || item.imageUrl || "",
+  tabletImage: item.tabletImage || "",
+  mobileImage: item.mobileImage || "",
   title: item.title || "Untitled banner",
   subtitle: item.subtitle || "",
   description: item.description || "",
@@ -145,17 +151,50 @@ export default function BannersPage() {
             ) : (
               banners.map((banner) => (
                 <article className="banner-row panel" key={banner._id}>
-                  <div className="banner-thumb">
-                    {banner.image ? (
-                      <Image
-                        src={banner.image}
-                        alt={banner.title}
-                        fill
-                        sizes="160px"
-                        unoptimized
-                      />
-                    ) : (
-                      <ImagePlus size={24} />
+                  <div className="banner-thumbs-list">
+                    <div className="banner-thumb-item desktop">
+                      <div className="banner-thumb-preview">
+                        {banner.image ? (
+                          <Image
+                            src={banner.image}
+                            alt="Desktop"
+                            fill
+                            sizes="96px"
+                            unoptimized
+                          />
+                        ) : (
+                          <ImagePlus size={16} />
+                        )}
+                      </div>
+                      <span className="banner-thumb-label">Desktop</span>
+                    </div>
+                    {banner.tabletImage && (
+                      <div className="banner-thumb-item tablet">
+                        <div className="banner-thumb-preview">
+                          <Image
+                            src={banner.tabletImage}
+                            alt="Tablet"
+                            fill
+                            sizes="72px"
+                            unoptimized
+                          />
+                        </div>
+                        <span className="banner-thumb-label">Tablet</span>
+                      </div>
+                    )}
+                    {banner.mobileImage && (
+                      <div className="banner-thumb-item mobile">
+                        <div className="banner-thumb-preview">
+                          <Image
+                            src={banner.mobileImage}
+                            alt="Mobile"
+                            fill
+                            sizes="40px"
+                            unoptimized
+                          />
+                        </div>
+                        <span className="banner-thumb-label">Mobile</span>
+                      </div>
                     )}
                   </div>
                   <div className="banner-copy">
@@ -298,11 +337,54 @@ function BannerEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState(banner?.image || "");
+  const [fileDesktop, setFileDesktop] = useState<File | null>(null);
+  const [fileTablet, setFileTablet] = useState<File | null>(null);
+  const [fileMobile, setFileMobile] = useState<File | null>(null);
+
+  const [removedDesktop, setRemovedDesktop] = useState(false);
+  const [removedTablet, setRemovedTablet] = useState(false);
+  const [removedMobile, setRemovedMobile] = useState(false);
+
+  const [previewDesktop, setPreviewDesktop] = useState(banner?.image || "");
+  const [previewTablet, setPreviewTablet] = useState(banner?.tabletImage || "");
+  const [previewMobile, setPreviewMobile] = useState(banner?.mobileImage || "");
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const handleDesktopChange = (selected: File) => {
+    setFileDesktop(selected);
+    setRemovedDesktop(false);
+    setPreviewDesktop(URL.createObjectURL(selected));
+  };
+  const handleTabletChange = (selected: File) => {
+    setFileTablet(selected);
+    setRemovedTablet(false);
+    setPreviewTablet(URL.createObjectURL(selected));
+  };
+  const handleMobileChange = (selected: File) => {
+    setFileMobile(selected);
+    setRemovedMobile(false);
+    setPreviewMobile(URL.createObjectURL(selected));
+  };
+
+  const handleDesktopRemove = () => {
+    setFileDesktop(null);
+    setRemovedDesktop(true);
+    setPreviewDesktop("");
+  };
+  const handleTabletRemove = () => {
+    setFileTablet(null);
+    setRemovedTablet(true);
+    setPreviewTablet("");
+  };
+  const handleMobileRemove = () => {
+    setFileMobile(null);
+    setRemovedMobile(true);
+    setPreviewMobile("");
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -310,30 +392,58 @@ function BannerEditor({
     setFieldErrors({});
     const formValues = new FormData(event.currentTarget);
     const nextFieldErrors: Record<string, string> = {};
-    if (!banner && !file) nextFieldErrors.image = "Banner image is required.";
+
+    if (!banner && !fileDesktop) {
+      nextFieldErrors.image = "Desktop banner image is required.";
+    } else if (banner && removedDesktop && !fileDesktop) {
+      nextFieldErrors.image = "Desktop banner image is required.";
+    }
+
     if (!String(formValues.get("link") || "").trim())
       nextFieldErrors.link = "Button link is required.";
     if (!String(formValues.get("displayOrder") || "").trim())
       nextFieldErrors.displayOrder = "Display order is required.";
+
     if (Object.keys(nextFieldErrors).length) {
       setFieldErrors(nextFieldErrors);
       setBusy(false);
       return;
     }
+
     try {
+      const form = new FormData();
+      if (fileDesktop) {
+        form.append("image", fileDesktop);
+      }
+      
+      if (fileTablet) {
+        form.append("tabletImage", fileTablet);
+      } else if (removedTablet) {
+        form.append("tabletImage", "");
+      }
+
+      if (fileMobile) {
+        form.append("mobileImage", fileMobile);
+      } else if (removedMobile) {
+        form.append("mobileImage", "");
+      }
+
+      form.append("title", String(formValues.get("title") || "").trim());
+      form.append("subtitle", String(formValues.get("subtitle") || "").trim());
+      form.append("description", String(formValues.get("description") || "").trim());
+      form.append("link", String(formValues.get("link") || "").trim());
+      form.append("buttonText", String(formValues.get("buttonText") || "").trim());
+      form.append("displayOrder", String(formValues.get("displayOrder") || ""));
+      form.append("isActive", String(formValues.get("isActive") || "true"));
+
       if (banner) {
-        const values = Object.fromEntries(formValues.entries());
-        await api.put(`/api/banner/${banner._id}`, {
-          ...values,
-          link: values.link,
-          displayOrder: Number(values.displayOrder),
-          isActive: values.isActive === "true",
+        await api.put(`/api/banner/${banner._id}`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
         });
       } else {
-        const form = formValues;
-        if (!file) return;
-        form.set("image", file);
-        await api.post("/api/banner", form);
+        await api.post("/api/banner", form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
       }
       onSaved();
     } catch (requestError) {
@@ -342,6 +452,7 @@ function BannerEditor({
       setBusy(false);
     }
   };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
@@ -362,34 +473,33 @@ function BannerEditor({
           </button>
         </div>
         <form className="banner-form" onSubmit={submit}>
-          {!banner && (
-            <label className="banner-upload">
-              {preview ? (
-                <Image src={preview} alt="Banner preview" fill unoptimized />
-              ) : (
-                <>
-                  <ImagePlus size={24} />
-                  <span>
-                    Choose banner image <b className="required-mark">*</b>
-                  </span>
-                </>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                  const selected = event.target.files?.[0];
-                  if (selected) {
-                    setFile(selected);
-                    setPreview(URL.createObjectURL(selected));
-                  }
-                }}
-              />
-            </label>
-          )}
-          {fieldErrors.image && (
-            <p className="field-error">{fieldErrors.image}</p>
-          )}
+          <div className="banner-uploads-grid">
+            <ImageUploadField
+              label="Desktop Banner (Laptop)"
+              helperText="Recommended sizing ratio: 16:9 or wider"
+              required={true}
+              previewUrl={previewDesktop}
+              onFileChange={handleDesktopChange}
+              onRemove={handleDesktopRemove}
+              error={fieldErrors.image}
+            />
+            <ImageUploadField
+              label="Tablet Banner"
+              helperText="Recommended sizing ratio: 4:3 or 16:10"
+              required={false}
+              previewUrl={previewTablet}
+              onFileChange={handleTabletChange}
+              onRemove={handleTabletRemove}
+            />
+            <ImageUploadField
+              label="Mobile Banner"
+              helperText="Recommended sizing ratio: 1:1 or 9:16"
+              required={false}
+              previewUrl={previewMobile}
+              onFileChange={handleMobileChange}
+              onRemove={handleMobileRemove}
+            />
+          </div>
           <div className="editor-grid">
             <label>
               Title <span className="optional-label">Optional</span>
@@ -470,6 +580,67 @@ function BannerEditor({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function ImageUploadField({
+  label,
+  helperText,
+  required,
+  previewUrl,
+  onFileChange,
+  onRemove,
+  error,
+}: {
+  label: string;
+  helperText: string;
+  required: boolean;
+  previewUrl: string;
+  onFileChange: (file: File) => void;
+  onRemove: () => void;
+  error?: string;
+}) {
+  return (
+    <div className="image-upload-field">
+      <div className="label-header">
+        <span>
+          {label} {required && <b className="required-mark">*</b>}
+        </span>
+        <span className="helper-text">{helperText}</span>
+      </div>
+      {previewUrl ? (
+        <div className="banner-upload-preview">
+          <Image src={previewUrl} alt={label} fill unoptimized />
+          <button
+            type="button"
+            className="remove-image-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Remove image"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ) : (
+        <label className="banner-upload-dropzone">
+          <ImagePlus size={20} />
+          <span>Upload image</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              const selected = event.target.files?.[0];
+              if (selected) {
+                onFileChange(selected);
+              }
+            }}
+          />
+        </label>
+      )}
+      {error && <p className="field-error">{error}</p>}
     </div>
   );
 }
