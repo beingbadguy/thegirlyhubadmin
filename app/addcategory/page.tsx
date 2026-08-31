@@ -4,6 +4,7 @@ import { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api, getApiError } from "../api-client";
 import { ChangeEvent, useState } from "react";
+import { compressImage } from "@/utils/image";
 import { AdminShell, Button, PageTitle } from "../admin-shared";
 
 export default function AddCategoryPage() {
@@ -36,7 +37,8 @@ export default function AddCategoryPage() {
     }
     try {
       const form = new FormData(event.currentTarget);
-      form.set("image", file);
+      const compressedFile = await compressImage(file);
+      form.set("image", compressedFile);
       await api.post("/api/category", form);
       router.replace("/categories");
     } catch (requestError) {

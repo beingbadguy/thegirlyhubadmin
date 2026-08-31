@@ -16,6 +16,7 @@ import { api, getApiError } from "../api-client";
 import { formatDate } from "../admin-data";
 import { useApiResource } from "../use-api-resource";
 import { ConfirmDialog, SpinnerButton, Toast } from "../ui";
+import { compressImage } from "@/utils/image";
 
 type ApiBanner = {
   _id: string;
@@ -412,18 +413,24 @@ function BannerEditor({
 
     try {
       const form = new FormData();
-      if (fileDesktop) {
-        form.append("image", fileDesktop);
+      const [compressedDesktop, compressedTablet, compressedMobile] = await Promise.all([
+        fileDesktop ? compressImage(fileDesktop) : null,
+        fileTablet ? compressImage(fileTablet) : null,
+        fileMobile ? compressImage(fileMobile) : null,
+      ]);
+
+      if (compressedDesktop) {
+        form.append("image", compressedDesktop);
       }
       
-      if (fileTablet) {
-        form.append("tabletImage", fileTablet);
+      if (compressedTablet) {
+        form.append("tabletImage", compressedTablet);
       } else if (removedTablet) {
         form.append("tabletImage", "");
       }
 
-      if (fileMobile) {
-        form.append("mobileImage", fileMobile);
+      if (compressedMobile) {
+        form.append("mobileImage", compressedMobile);
       } else if (removedMobile) {
         form.append("mobileImage", "");
       }

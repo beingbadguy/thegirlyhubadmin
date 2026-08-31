@@ -5,6 +5,7 @@ import { AdminShell, Empty, PageTitle } from "../admin-shared";
 import { api, getApiError } from "../api-client";
 import { useApiResource } from "../use-api-resource";
 import { ChangeEvent, FormEvent, useState, useEffect } from "react";
+import { compressImage } from "@/utils/image";
 import type { Category } from "../admin-data";
 import { Pagination, usePagination } from "../pagination";
 
@@ -212,7 +213,10 @@ function CategoryEditor({
     try {
       const form = new FormData(event.currentTarget);
       form.delete("image");
-      if (file) form.set("image", file);
+      if (file) {
+        const compressedFile = await compressImage(file);
+        form.set("image", compressedFile);
+      }
       await api.put(`/api/category/${category.id}`, form);
       await onSaved();
     } catch (requestError) {

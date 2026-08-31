@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ChangeEvent, DragEvent, FormEvent, useState, useEffect, useRef } from "react";
 import { z } from "zod";
 import { api, getApiError } from "./api-client";
+import { compressImage } from "@/utils/image";
 import { SpinnerButton, Toast } from "./ui";
 import type { ProductRecord } from "./product-types";
 
@@ -149,8 +150,13 @@ export function ProductEditor({
         form.append(key, value);
       }
 
+      // Compress new image files client-side before sending
+      const compressedImages = await Promise.all(
+        images.map((file) => compressImage(file))
+      );
+
       // Append new image files selected by the admin
-      images.forEach((file) => {
+      compressedImages.forEach((file) => {
         form.append("images", file);
       });
 
